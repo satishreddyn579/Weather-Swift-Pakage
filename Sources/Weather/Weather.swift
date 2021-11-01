@@ -85,7 +85,7 @@ public class Weather {
             case .success(let json):
                 let consolidatedWeatherInfo = json["consolidated_weather"][0]
                 weatherInfo["condition"] = consolidatedWeatherInfo["weather_state_name"].string
-                weatherInfo["temperature"] = "\(consolidatedWeatherInfo["the_temp"].doubleValue) °C"
+                weatherInfo["temperature"] = "\(consolidatedWeatherInfo["the_temp"].intValue) °C"
                 self?.condition = weatherInfo["condition"]
                 self?.temperature = weatherInfo["temperature"]
                 self?.dispatchGroup.leave()
