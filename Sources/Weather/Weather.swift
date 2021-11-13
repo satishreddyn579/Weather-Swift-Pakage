@@ -1,109 +1,62 @@
 import Foundation
 import SwiftyJSON
+import XCTest
 
 public class Weather {
-    public var city: String
-    public var condition: String?
-    public var temperature: String?
+    public var weatherData: WeatherData?
+    private var city: String
     private let baseURL = URL(string: "https://www.metaweather.com/api/location/")
     private let dispatchGroup = DispatchGroup()
     
     public init(city: String) {
         self.city = city.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? city.lowercased()
-        let _ = try? getCurrentConditions()
     }
     
-    internal func fetchJSON(path: String, completion: @escaping (Result<JSON, Error>) -> Void) {
+    internal func fetchJSON(path: String) async throws -> Result<Data, Error> {
         enum fetchJSONError: Error {
             case invalidURL
             case missingData
         }
-        
         guard let url = URL(string: path, relativeTo: baseURL) else {
-            completion(.failure(fetchJSONError.invalidURL))
-            return
+            return .failure(fetchJSONError.invalidURL)
         }
-        
-        let dataTask = URLSession.shared.dataTask(with: url) { (data, urlResponse, error) in
-            if let error = error {
-                completion(.failure(error))
-                return
+        let (data, _) = try await URLSession.shared.data(from: url)
+        guard let data = data as? Data else {
+            return .failure(fetchJSONError.missingData)
+        }
+        return .success(data)
+    }
+    
+    internal func getLocationId() async throws -> Int? {
+        do {
+            let result: Result<Data, Error> = try await fetchJSON(path: "search/?query=\(self.city)")
+            switch result {
+            case .success(let data):
+                let cityDetails = try? JSONDecoder().decode(CityDetails.self, from: data)
+                return cityDetails?.first?.woeid
+            case .failure(_):
+                return nil
             }
-            
-            guard let data = data else {
-                completion(.failure(fetchJSONError.missingData))
-                return
-            }
-            
+        }
+    }
+    
+    public func getCurrentConditions() async throws -> Result<WeatherData, Error> {
+        let locationId = try await getLocationId()
+        let result: Result<Data, Error> = try await fetchJSON(path: "\(locationId ?? 0)")
+        switch result {
+        case .success(let data):
             do {
-                let jsonResult = try JSON(data: data)
-                completion(.success(jsonResult))
+                self.weatherData = try JSONDecoder().decode(WeatherData.self, from: data)
+                return .success((self.weatherData)!)
             } catch {
-                completion(.failure(error))
+                return .failure(error)
             }
+        case .failure(let error):
+            return .failure(error)
         }
-        
-        dataTask.resume()
-    }
-    
-    internal func getLocationId() throws -> Int? {
-        var locationId: Int?
-        var fetchError: Error?
-        
-        dispatchGroup.enter()
-        fetchJSON(path: "search/?query=\(self.city)") { result in
-            switch result {
-            case .success(let json):
-                locationId = json[0]["woeid"].int
-                self.dispatchGroup.leave()
-            case .failure(let error):
-                print("Request failed with error: \(error)")
-                locationId = nil
-                fetchError = error
-                self.dispatchGroup.leave()
-            }
-        }
-        
-        dispatchGroup.wait()
-        if let fetchError = fetchError {
-            throw fetchError
-        }
-        return locationId
-    }
-    
-    public func getCurrentConditions() throws -> [String: String]? {
-        var weatherInfo: [String: String] = [:]
-        var fetchError: Error?
-        
-        guard let locationId = try getLocationId() else {
-            return nil
-        }
-        
-        dispatchGroup.enter()
-        fetchJSON(path: "\(locationId)") { [weak self] result in
-            switch result {
-            case .success(let json):
-                let consolidatedWeatherInfo = json["consolidated_weather"][0]
-                weatherInfo["condition"] = consolidatedWeatherInfo["weather_state_name"].string
-                weatherInfo["temperature"] = "\(consolidatedWeatherInfo["the_temp"].intValue) °C"
-                self?.condition = weatherInfo["condition"]
-                self?.temperature = weatherInfo["temperature"]
-                self?.dispatchGroup.leave()
-            case .failure(let error):
-                fetchError = error
-                self?.dispatchGroup.leave()
-            }
-        }
-        
-        dispatchGroup.wait()
-        if let fetchError = fetchError {
-            throw fetchError
-        }
-        return weatherInfo
     }
     
     internal func convertCelToFar(celsiusTemp: Double) -> Int {
         return Int((celsiusTemp * 9/5)) + 32
-        
     }
 }

@@ -6,7 +6,7 @@ import PackageDescription
 let package = Package(
     name: "Weather",
     platforms: [
-        .macOS(.v10_10), .iOS(.v8), .tvOS(.v9), .watchOS(.v3)
+        .macOS(.v12), .iOS(.v15), .tvOS(.v9), .watchOS(.v3)
     ],
     products: [
         // Products define the executables and libraries a package produces, and make them visible to other packages.
